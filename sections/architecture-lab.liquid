@@ -13,7 +13,7 @@
   ┌────────────────────────────┬─────────────────────────────────────────────┐
   │ BigCommerce                │ Shopify Dawn                                │
   ├────────────────────────────┼─────────────────────────────────────────────┤
-  │ schema.json Ở ROOT theme   │ {% schema %} NẰM TRONG từng file section    │
+  │ schema.json Ở ROOT theme   │ schema JSON NẰM TRONG từng file section     │
   │ Settings = GLOBAL theme    │ section.settings = 1 INSTANCE section       │
   │ settings.xxx (Handlebars)  │ {{ section.settings.xxx }}                  │
   │ Không có "section" lặp     │ Cùng 1 section thêm nhiều lần, mỗi lần 1 id │
@@ -24,7 +24,7 @@
 
   2 TẦNG SETTINGS SHOPIFY (dễ nhầm với BC)
   - config/settings_schema.json  → {{ settings.logo }}     (theme-wide, giống schema.json BC)
-  - sections/*.liquid {% schema %} → {{ section.settings.heading }}  (per instance)
+  - sections/*.liquid (schema tag) → {{ section.settings.heading }}  (per instance)
   Dawn dùng tầng 1 cho logo, typography, color schemes; tầng 2 cho mọi block nội dung.
 
   JSON SCHEMA KHÔNG CHO: comment, trailing comma, single quotes.
