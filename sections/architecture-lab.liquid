@@ -1,0 +1,677 @@
+{% comment %}
+  =============================================================================
+  ARCHITECTURE LAB — bài học tổng hợp schema + JS của Dawn
+  Dành cho người chuyển từ BigCommerce (Cornerstone) sang Shopify.
+
+  CÁCH HỌC
+  1. Online Store → Customize → Add section → "Architecture Lab"
+  2. Đổi từng setting bên trái, nhìn HTML bên phải đổi theo.
+  3. Bật "Show developer notes" để xem data-* và event Theme Editor.
+  4. Đọc file này từ trên xuống: Liquid markup → schema JSON ở cuối.
+
+  KHÁC BIỆT CỐT LÕI vs BIGCOMMERCE
+  ┌────────────────────────────┬─────────────────────────────────────────────┐
+  │ BigCommerce                │ Shopify Dawn                                │
+  ├────────────────────────────┼─────────────────────────────────────────────┤
+  │ schema.json Ở ROOT theme   │ {% schema %} NẰM TRONG từng file section    │
+  │ Settings = GLOBAL theme    │ section.settings = 1 INSTANCE section       │
+  │ settings.xxx (Handlebars)  │ {{ section.settings.xxx }}                  │
+  │ Không có "section" lặp     │ Cùng 1 section thêm nhiều lần, mỗi lần 1 id │
+  │ Page templates + regions   │ templates/*.json trỏ sections[]             │
+  │ PageManager + webpack      │ Custom Elements, file JS rời trong assets/  │
+  │ {{inject}} / jsContext     │ data-* attributes, this.dataset             │
+  └────────────────────────────┴─────────────────────────────────────────────┘
+
+  2 TẦNG SETTINGS SHOPIFY (dễ nhầm với BC)
+  - config/settings_schema.json  → {{ settings.logo }}     (theme-wide, giống schema.json BC)
+  - sections/*.liquid {% schema %} → {{ section.settings.heading }}  (per instance)
+  Dawn dùng tầng 1 cho logo, typography, color schemes; tầng 2 cho mọi block nội dung.
+
+  JSON SCHEMA KHÔNG CHO: comment, trailing comma, single quotes.
+
+  File liên quan: assets/architecture-lab.js, assets/section-architecture-lab.css
+  =============================================================================
+{% endcomment %}
+
+{{ 'section-architecture-lab.css' | asset_url | stylesheet_tag }}
+
+{% comment %}
+  Dawn KHÔNG dùng | script_tag cho JS section vì filter đó không thêm defer.
+  Pattern chuẩn: <script src="{{ 'file.js' | asset_url }}" defer="defer"></script>
+  Guard customElements.get() trong JS vì Theme Editor có thể đánh lại file này.
+{% endcomment %}
+<script src="{{ 'architecture-lab.js' | asset_url }}" defer="defer"></script>
+
+{% comment %}
+  CSS PHẢI scope bằng section.id — cùng section có thể xuất hiện 2 lần trên 1 page.
+  BC: 1 giá trị schema.json cho cả theme, ít khi cần id instance.
+{% endcomment %}
+{%- style -%}
+  {{ section.settings.heading_font | font_face: font_display: 'swap' }}
+
+  .architecture-lab-{{ section.id }} {
+    --lab-accent: {{ section.settings.accent_color }};
+    --lab-heading-font: {{ section.settings.heading_font.family }}, {{ section.settings.heading_font.fallback_families }};
+    --lab-heading-weight: {{ section.settings.heading_font.weight }};
+    --lab-heading-style: {{ section.settings.heading_font.style }};
+    {%- if section.settings.section_gradient != blank -%}
+      --lab-bg: {{ section.settings.section_gradient }};
+    {%- endif -%}
+  }
+
+  .section-{{ section.id }}-padding {
+    padding-top: {{ section.settings.padding_top | times: 0.75 | round: 0 }}px;
+    padding-bottom: {{ section.settings.padding_bottom | times: 0.75 | round: 0 }}px;
+  }
+
+  @media screen and (min-width: 750px) {
+    .section-{{ section.id }}-padding {
+      padding-top: {{ section.settings.padding_top }}px;
+      padding-bottom: {{ section.settings.padding_bottom }}px;
+    }
+  }
+{%- endstyle -%}
+
+<architecture-lab
+  class="architecture-lab architecture-lab-{{ section.id }} architecture-lab--{{ section.settings.content_alignment }} architecture-lab--media-{{ section.settings.media_position }} color-{{ section.settings.color_scheme }} gradient"
+  data-section-id="{{ section.id }}"
+  data-accent-color="{{ section.settings.accent_color }}"
+  data-alignment="{{ section.settings.content_alignment }}"
+  data-items-to-show="{{ section.settings.items_to_show }}"
+  data-show-notes="{{ section.settings.show_dev_notes }}"
+  data-product-handle="{{ section.settings.featured_product.handle }}"
+  data-collection-handle="{{ section.settings.featured_collection.handle }}"
+>
+  <div class="page-width section-{{ section.id }}-padding architecture-lab__inner">
+    <header class="architecture-lab__header">
+      {%- if section.settings.eyebrow != blank -%}
+        {% comment %} type: text → string. Luôn | escape. BC: {{theme_settings}} tương đương. {% endcomment %}
+        <p class="architecture-lab__eyebrow caption-with-letter-spacing">{{ section.settings.eyebrow | escape }}</p>
+      {%- endif -%}
+
+      {%- if section.settings.heading != blank -%}
+        <h2 class="architecture-lab__heading inline-richtext {{ section.settings.heading_size }}">
+          {{ section.settings.heading | escape }}
+        </h2>
+      {%- endif -%}
+
+      {%- if section.settings.intro != blank -%}
+        {% comment %} type: richtext → HTML (<p>, <strong>, …). KHÔNG escape. {% endcomment %}
+        <div class="architecture-lab__intro rte">{{ section.settings.intro }}</div>
+      {%- endif -%}
+    </header>
+
+    <div class="architecture-lab__hero">
+      <div class="architecture-lab__media">
+        <div class="architecture-lab__image">
+          {%- if section.settings.image != blank -%}
+            {% comment %}
+              type: image_picker → image object (không phải URL string).
+              Dawn: image_url + image_tag (srcset). BC: cdn image helpers / Stencil resources.
+            {% endcomment %}
+            {{
+              section.settings.image
+              | image_url: width: 1500
+              | image_tag:
+                loading: 'lazy',
+                widths: '375, 550, 750, 1100, 1500',
+                sizes: '(min-width: 750px) 50vw, 100vw',
+                alt: section.settings.heading
+            }}
+          {%- else -%}
+            {{ 'hero-apparel-1' | placeholder_svg_tag: 'placeholder-svg' }}
+          {%- endif -%}
+        </div>
+
+        {%- if section.settings.video != blank -%}
+          {% comment %} type: video → file video trên Shopify Files, không phải YouTube URL (cái đó là video_url). {% endcomment %}
+          <div class="architecture-lab__video">
+            {{ section.settings.video | video_tag: image_size: '800x', controls: true, loading: 'lazy' }}
+          </div>
+        {%- endif -%}
+      </div>
+
+      <div class="architecture-lab__copy">
+        {%- if section.settings.extra_notes != blank -%}
+          {% comment %} type: textarea → string nhiều dòng, không phải HTML. | escape + white-space. {% endcomment %}
+          <p class="architecture-lab__kicker">{{ section.settings.extra_notes | escape | newline_to_br }}</p>
+        {%- endif -%}
+
+        {%- if section.settings.button_label != blank -%}
+          {% comment %} type: url → string URL (page/product/collection/external). {% endcomment %}
+          <a
+            class="button"
+            {% if section.settings.button_link == blank %}
+              role="link" aria-disabled="true"
+            {% else %}
+              href="{{ section.settings.button_link }}"
+            {% endif %}
+            style="background-color: {{ section.settings.accent_color }};"
+          >
+            {{ section.settings.button_label | escape }}
+          </a>
+        {%- endif -%}
+      </div>
+    </div>
+
+    <section class="architecture-lab__panel" aria-labelledby="LabResources-{{ section.id }}">
+      <h3 class="architecture-lab__panel-title" id="LabResources-{{ section.id }}">Resource pickers</h3>
+      <div class="architecture-lab__resources">
+        <article class="architecture-lab__card">
+          <p class="architecture-lab__card-meta">type: product</p>
+          {%- assign lab_product = section.settings.featured_product -%}
+          {%- if lab_product != blank -%}
+            {%- if lab_product.featured_image -%}
+              {{
+                lab_product.featured_image
+                | image_url: width: 600
+                | image_tag: loading: 'lazy', alt: lab_product.title
+              }}
+            {%- endif -%}
+            <h4>
+              <a href="{{ lab_product.url }}">{{ lab_product.title | escape }}</a>
+            </h4>
+            <p>{{ lab_product.price | money }}</p>
+          {%- else -%}
+            <p>Chưa chọn product — Theme Editor → Featured product.</p>
+          {%- endif -%}
+        </article>
+
+        <article class="architecture-lab__card">
+          <p class="architecture-lab__card-meta">type: collection · number limit={{ section.settings.items_to_show }}</p>
+          {%- if section.settings.featured_collection != blank -%}
+            <h4>
+              <a href="{{ section.settings.featured_collection.url }}">
+                {{ section.settings.featured_collection.title | escape }}
+              </a>
+            </h4>
+            <ul class="architecture-lab__list">
+              {%- for product in section.settings.featured_collection.products limit: section.settings.items_to_show -%}
+                <li>
+                  <a href="{{ product.url }}">{{ product.title | escape }}</a>
+                </li>
+              {%- else -%}
+                <li>Collection trống.</li>
+              {%- endfor -%}
+            </ul>
+          {%- else -%}
+            <p>Chưa chọn collection.</p>
+          {%- endif -%}
+        </article>
+
+        <article class="architecture-lab__card">
+          <p class="architecture-lab__card-meta">type: blog</p>
+          {%- if section.settings.featured_blog != blank -%}
+            <h4>
+              <a href="{{ section.settings.featured_blog.url }}">{{ section.settings.featured_blog.title | escape }}</a>
+            </h4>
+            <ul class="architecture-lab__list">
+              {%- for article in section.settings.featured_blog.articles limit: section.settings.items_to_show -%}
+                <li>
+                  <a href="{{ article.url }}">{{ article.title | escape }}</a>
+                </li>
+              {%- else -%}
+                <li>Blog chưa có bài.</li>
+              {%- endfor -%}
+            </ul>
+          {%- else -%}
+            <p>Chưa chọn blog.</p>
+          {%- endif -%}
+        </article>
+
+        <article class="architecture-lab__card">
+          <p class="architecture-lab__card-meta">type: page</p>
+          {%- if section.settings.featured_page != blank -%}
+            <h4>
+              <a href="{{ section.settings.featured_page.url }}">{{ section.settings.featured_page.title | escape }}</a>
+            </h4>
+            <div class="rte">{{ section.settings.featured_page.content | strip_html | truncate: 160 }}</div>
+          {%- else -%}
+            <p>Chưa chọn page.</p>
+          {%- endif -%}
+        </article>
+
+        <article class="architecture-lab__card">
+          <p class="architecture-lab__card-meta">type: link_list</p>
+          {%- if section.settings.menu != blank -%}
+            <h4>{{ section.settings.menu.title | escape }}</h4>
+            <ul class="architecture-lab__list">
+              {%- for link in section.settings.menu.links -%}
+                <li>
+                  <a href="{{ link.url }}">{{ link.title | escape }}</a>
+                  {%- if link.links.size > 0 -%}
+                    <ul class="architecture-lab__list">
+                      {%- for child in link.links -%}
+                        <li>
+                          <a href="{{ child.url }}">{{ child.title | escape }}</a>
+                        </li>
+                      {%- endfor -%}
+                    </ul>
+                  {%- endif -%}
+                </li>
+              {%- endfor -%}
+            </ul>
+          {%- else -%}
+            <p>Chưa chọn menu (Navigation → Menus).</p>
+          {%- endif -%}
+        </article>
+      </div>
+    </section>
+
+    {%- if section.blocks.size > 0 -%}
+      {% comment %}
+        BLOCKS = setting lặp trong 1 section (Theme Editor: Add block).
+        BC: lặp bằng panel array / widget regions, không gắn chặt file template.
+        {{ block.shopify_attributes }} BẮT BUỘC để editor select đúng block.
+        forloop.parentloop không có — dùng section.id + block.id.
+      {% endcomment %}
+      <section class="architecture-lab__panel" aria-labelledby="LabBlocks-{{ section.id }}">
+        <h3 class="architecture-lab__panel-title" id="LabBlocks-{{ section.id }}">Blocks ({{ section.blocks.size }})</h3>
+        <div class="architecture-lab__blocks">
+          {%- for block in section.blocks -%}
+            <div
+              class="architecture-lab__block{% if block.settings.highlight %} is-highlighted{% endif %}"
+              data-lab-block
+              {{ block.shopify_attributes }}
+            >
+              {%- case block.type -%}
+                {%- when 'feature' -%}
+                  {%- if block.settings.icon_image != blank -%}
+                    <div class="architecture-lab__block-image">
+                      {{
+                        block.settings.icon_image
+                        | image_url: width: 800
+                        | image_tag: loading: 'lazy', alt: block.settings.title
+                      }}
+                    </div>
+                  {%- endif -%}
+                  {%- if block.settings.title != blank -%}
+                    <h3 class="h4">{{ block.settings.title | escape }}</h3>
+                  {%- endif -%}
+                  {%- if block.settings.text != blank -%}
+                    <div class="rte">{{ block.settings.text }}</div>
+                  {%- endif -%}
+                  {%- if block.settings.link_label != blank -%}
+                    <a
+                      class="link underlined-link"
+                      {% if block.settings.link == blank %}
+                        role="link" aria-disabled="true"
+                      {% else %}
+                        href="{{ block.settings.link }}"
+                      {% endif %}
+                    >
+                      {{ block.settings.link_label | escape }}
+                    </a>
+                  {%- endif -%}
+
+                {%- when 'stat' -%}
+                  <span class="architecture-lab__stat-value">
+                    {{ block.settings.value | escape }}{% if block.settings.suffix != blank %}{{ block.settings.suffix | escape }}{% endif %}
+                  </span>
+                  {%- if block.settings.label != blank -%}
+                    <p>{{ block.settings.label | escape }}</p>
+                  {%- endif -%}
+
+                {%- when 'quote' -%}
+                  {%- if block.settings.quote != blank -%}
+                    <blockquote class="rte">{{ block.settings.quote }}</blockquote>
+                  {%- endif -%}
+                  {%- if block.settings.author != blank -%}
+                    <p class="architecture-lab__card-meta">{{ block.settings.author | escape }}</p>
+                  {%- endif -%}
+              {%- endcase -%}
+            </div>
+          {%- endfor -%}
+        </div>
+      </section>
+    {%- endif -%}
+
+    {%- if section.settings.custom_html != blank -%}
+      {% comment %}
+        type: html → merchant HTML, KHÔNG escape (XSS nếu theme public).
+        BC: tương tự widget HTML / custom template, cũng unescaped.
+      {% endcomment %}
+      <div class="architecture-lab__panel architecture-lab__html">
+        {{ section.settings.custom_html }}
+      </div>
+    {%- endif -%}
+
+    <aside class="architecture-lab__notes" data-lab-notes {% unless section.settings.show_dev_notes %}hidden{% endunless %}>
+      <div>
+        <h3>Liquid → JS (this.dataset)</h3>
+        <pre data-lab-dataset></pre>
+      </div>
+      <div>
+        <h3>Theme Editor events</h3>
+        <ol class="architecture-lab__log" data-lab-event-log></ol>
+      </div>
+      <div class="architecture-lab__actions">
+        <button type="button" class="button button--secondary" data-lab-toggle-notes aria-expanded="{{ section.settings.show_dev_notes }}">
+          Toggle notes
+        </button>
+        <button type="button" class="button button--secondary" data-lab-copy-id>
+          Copy section.id
+        </button>
+        <p class="architecture-lab__status" data-lab-status></p>
+      </div>
+      <p class="architecture-lab__card-meta">
+        BC: 1 global script + PageManager. Dawn: custom element sống/chết theo HTML section.
+        JS tắt vẫn đọc được heading, product, blocks — progressive enhancement.
+      </p>
+    </aside>
+  </div>
+</architecture-lab>
+
+{% schema %}
+{
+  "name": "Architecture Lab",
+  "tag": "section",
+  "class": "section",
+  "disabled_on": {
+    "groups": ["header", "footer"]
+  },
+  "settings": [
+    {
+      "type": "paragraph",
+      "content": "Bài học schema Dawn. BC gom settings trong schema.json global; Shopify nhúng JSON này ngay trong section. Đổi setting = Shopify render lại HTML instance này (section.id)."
+    },
+    {
+      "type": "header",
+      "content": "Color scheme (Dawn) vs color thô"
+    },
+    {
+      "type": "color_scheme",
+      "id": "color_scheme",
+      "label": "Color scheme",
+      "default": "scheme-1",
+      "info": "Không có trong list cổ điển. Dawn dùng cái này thay vì color rời: class color-{{ section.settings.color_scheme }}."
+    },
+    {
+      "type": "header",
+      "content": "Text settings"
+    },
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow (text)",
+      "default": "BC → Shopify",
+      "info": "1 dòng, escape khi output."
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading (text)",
+      "default": "Architecture Lab"
+    },
+    {
+      "type": "select",
+      "id": "heading_size",
+      "label": "Heading size (select)",
+      "options": [
+        { "value": "h2", "label": "Small" },
+        { "value": "h1", "label": "Medium" },
+        { "value": "h0", "label": "Large" }
+      ],
+      "default": "h1",
+      "info": "Giá trị = CSS class Dawn, không phải tag HTML."
+    },
+    {
+      "type": "richtext",
+      "id": "intro",
+      "label": "Intro (richtext)",
+      "default": "<p>Section mẫu: mỗi control schema map 1 lần xuống Liquid. So với BigCommerce, JSON này sống trong file section chứ không phải schema.json ở root.</p>"
+    },
+    {
+      "type": "textarea",
+      "id": "extra_notes",
+      "label": "Notes (textarea)",
+      "default": "textarea = plain text nhiều dòng.\nKhông phải HTML — dùng newline_to_br."
+    },
+    {
+      "type": "header",
+      "content": "Media + URL"
+    },
+    {
+      "type": "image_picker",
+      "id": "image",
+      "label": "Image (image_picker)"
+    },
+    {
+      "type": "video",
+      "id": "video",
+      "label": "Video (video)",
+      "info": "Shopify-hosted. YouTube/Vimeo URL là type video_url ( Dawn video.liquid còn fallback)."
+    },
+    {
+      "type": "text",
+      "id": "button_label",
+      "label": "Button label (text)",
+      "default": "Open docs"
+    },
+    {
+      "type": "url",
+      "id": "button_link",
+      "label": "Button link (url)"
+    },
+    {
+      "type": "radio",
+      "id": "media_position",
+      "label": "Media position (radio)",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "right", "label": "Right" }
+      ],
+      "default": "left",
+      "info": "radio ≈ select, UI khác. Output vẫn là string."
+    },
+    {
+      "type": "header",
+      "content": "Color, gradient, font"
+    },
+    {
+      "type": "color",
+      "id": "accent_color",
+      "label": "Accent (color)",
+      "default": "#121212",
+      "info": "Hex. Gắn CSS variable --lab-accent, đồng thời data-accent-color cho JS."
+    },
+    {
+      "type": "color_background",
+      "id": "section_gradient",
+      "label": "Section background (color_background)",
+      "info": "Gradient picker. Output = CSS background value, không chỉ hex. Dawn dùng trong color schemes."
+    },
+    {
+      "type": "font_picker",
+      "id": "heading_font",
+      "label": "Heading font (font_picker)",
+      "default": "assistant_n4",
+      "info": "Object: family, weight, style. Phải | font_face trước khi dùng. Theme-wide fonts nằm ở config/settings_schema.json."
+    },
+    {
+      "type": "header",
+      "content": "Layout controls"
+    },
+    {
+      "type": "select",
+      "id": "content_alignment",
+      "label": "Alignment (select)",
+      "options": [
+        { "value": "left", "label": "Left" },
+        { "value": "center", "label": "Center" },
+        { "value": "right", "label": "Right" }
+      ],
+      "default": "left"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_dev_notes",
+      "label": "Show developer notes (checkbox)",
+      "default": true,
+      "info": "boolean. JS đọc data-show-notes; HTML vẫn render khi JS tắt."
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Padding top (range)",
+      "default": 36
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Padding bottom (range)",
+      "default": 36
+    },
+    {
+      "type": "number",
+      "id": "items_to_show",
+      "label": "Items to show (number)",
+      "default": 3,
+      "info": "Dùng limit: cho collection.products / blog.articles. JS: Number(this.dataset.itemsToShow)."
+    },
+    {
+      "type": "header",
+      "content": "Resource pickers (object, không phải ID string)"
+    },
+    {
+      "type": "product",
+      "id": "featured_product",
+      "label": "Product (product)"
+    },
+    {
+      "type": "collection",
+      "id": "featured_collection",
+      "label": "Collection (collection)"
+    },
+    {
+      "type": "blog",
+      "id": "featured_blog",
+      "label": "Blog (blog)"
+    },
+    {
+      "type": "page",
+      "id": "featured_page",
+      "label": "Page (page)"
+    },
+    {
+      "type": "link_list",
+      "id": "menu",
+      "label": "Menu (link_list)",
+      "info": "Trả về linklists[handle]. Lặp .links, nested .links."
+    },
+    {
+      "type": "header",
+      "content": "Raw HTML"
+    },
+    {
+      "type": "html",
+      "id": "custom_html",
+      "label": "Custom HTML (html)",
+      "info": "Không escape. Đừng dùng cho theme public nếu merchant không tin cậy."
+    }
+  ],
+  "blocks": [
+    {
+      "type": "feature",
+      "name": "Feature",
+      "settings": [
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Title",
+          "default": "Schema nằm trong section"
+        },
+        {
+          "type": "richtext",
+          "id": "text",
+          "label": "Text",
+          "default": "<p>Khác BC: không sửa schema.json root để thêm block nội dung.</p>"
+        },
+        {
+          "type": "image_picker",
+          "id": "icon_image",
+          "label": "Image"
+        },
+        {
+          "type": "text",
+          "id": "link_label",
+          "label": "Link label",
+          "default": "Learn more"
+        },
+        {
+          "type": "url",
+          "id": "link",
+          "label": "Link"
+        },
+        {
+          "type": "checkbox",
+          "id": "highlight",
+          "label": "Highlight this block",
+          "default": false
+        }
+      ]
+    },
+    {
+      "type": "stat",
+      "name": "Stat",
+      "settings": [
+        {
+          "type": "text",
+          "id": "value",
+          "label": "Value",
+          "default": "12"
+        },
+        {
+          "type": "text",
+          "id": "suffix",
+          "label": "Suffix",
+          "default": "+"
+        },
+        {
+          "type": "text",
+          "id": "label",
+          "label": "Label",
+          "default": "Setting types in this file"
+        }
+      ]
+    },
+    {
+      "type": "quote",
+      "name": "Quote",
+      "settings": [
+        {
+          "type": "richtext",
+          "id": "quote",
+          "label": "Quote",
+          "default": "<p>section.id scopes CSS vì một page có thể gắn nhiều instance.</p>"
+        },
+        {
+          "type": "text",
+          "id": "author",
+          "label": "Author",
+          "default": "Dawn architecture"
+        }
+      ]
+    }
+  ],
+  "presets": [
+    {
+      "name": "Architecture Lab",
+      "category": "Learning",
+      "blocks": [
+        { "type": "feature" },
+        { "type": "stat" },
+        { "type": "quote" }
+      ]
+    }
+  ]
+}
+{% endschema %}
