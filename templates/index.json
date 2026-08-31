@@ -36,9 +36,11 @@
         "button"
       ],
       "settings": {
+        "image": "shopify://shop_images/image_7cd9ad7a-a55e-467d-92a4-52ba76f2a2d7.png",
+        "image_2": "shopify://shop_images/iphone-12-tr-ng.png",
         "image_overlay_opacity": 40,
         "image_height": "adapt",
-        "image_behavior": "none",
+        "image_behavior": "ambient",
         "desktop_content_position": "bottom-center",
         "desktop_content_alignment": "center",
         "show_text_box": false,
